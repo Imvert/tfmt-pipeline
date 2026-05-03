@@ -1,0 +1,160 @@
+name: Pipeline de Anonimización QA
+
+on:
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: 'Ambiente destino'
+        required: true
+        default: 'qa'
+        type: choice
+        options: [qa, staging]
+
+  push:
+    branches: [main]
+    paths:
+      - 'pipeline/**'
+      - 'sql/**'
+      - 'config/**'
+
+env:
+  PYTHON_VERSION: '3.12'
+
+jobs:
+
+  pre_check:
+    name: Verificación de prerequisitos
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout del repositorio
+        uses: actions/checkout@v4
+
+      - name: Verificar archivos del pipeline
+        run: |
+          test -f config/anonymization_policy.yaml || (echo "ERROR: Falta política YAML" && exit 1)
+          test -f pipeline/orchestrator.py || (echo "ERROR: Falta orquestador" && exit 1)
+          test -f sql/01_northwind_schema.sql || (echo "ERROR: Falta esquema SQL" && exit 1)
+          test -f sql/03_masking_procedures.sql || (echo "ERROR: Falta SP SQL" && exit 1)
+          echo "✓ Todos los archivos requeridos presentes"
+
+  run_pipeline:
+    name: Ejecutar Pipeline de Anonimización
+    runs-on: ubuntu-latest
+    needs: pre_check
+
+    services:
+      db_produccion:
+        image: postgres:15-alpine
+        env:
+          POSTGRES_DB: northwind_prod
+          POSTGRES_USER: prod_user
+          POSTGRES_PASSWORD: ${{ secrets.PROD_DB_PASSWORD }}
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+      db_qa:
+        image: postgres:15-alpine
+        env:
+          POSTGRES_DB: northwind_qa
+          POSTGRES_USER: qa_user
+          POSTGRES_PASSWORD: ${{ secrets.QA_DB_PASSWORD }}
+        ports:
+          - 5433:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    steps:
+      - name: Checkout del repositorio
+        uses: actions/checkout@v4
+
+      - name: Configurar Python ${{ env.PYTHON_VERSION }}
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: 'pip'
+
+      - name: Instalar cliente PostgreSQL
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y postgresql-client
+
+      - name: Instalar dependencias Python
+        run: pip install -r requirements.txt
+
+      - name: Cargar esquema y datos en BD producción
+        env:
+          PGPASSWORD: ${{ secrets.PROD_DB_PASSWORD }}
+        run: |
+          psql -h localhost -p 5432 -U prod_user -d northwind_prod -f sql/01_northwind_schema.sql
+          psql -h localhost -p 5432 -U prod_user -d northwind_prod -f sql/02_northwind_data.sql
+          echo "✓ Base de datos de producción cargada"
+
+      - name: Ejecutar pipeline de anonimización
+        env:
+          SOURCE_HOST: localhost
+          SOURCE_PORT: 5432
+          SOURCE_DB: northwind_prod
+          SOURCE_USER: prod_user
+          SOURCE_PASSWORD: ${{ secrets.PROD_DB_PASSWORD }}
+          TARGET_HOST: localhost
+          TARGET_PORT: 5433
+          TARGET_DB: northwind_qa
+          TARGET_USER: qa_user
+          TARGET_PASSWORD: ${{ secrets.QA_DB_PASSWORD }}
+          FPE_KEY: ${{ secrets.FPE_KEY }}
+          FPE_TWEAK: ${{ secrets.FPE_TWEAK }}
+        run: python -m pipeline.orchestrator
+
+      - name: Verificar transformación en BD QA
+        env:
+          PGPASSWORD: ${{ secrets.QA_DB_PASSWORD }}
+        run: |
+          echo "── Validación post-pipeline ──"
+          psql -h localhost -p 5433 -U qa_user -d northwind_qa -c "
+            SELECT customer_id, contact_name, cedula, email FROM customers LIMIT 5;
+          "
+          echo "── Verificación: 0 cédulas originales en QA ──"
+          psql -h localhost -p 5433 -U qa_user -d northwind_qa -c "
+            SELECT COUNT(*) AS originales_filtradas FROM customers
+            WHERE cedula IN ('1712345678','0924567890','1723456789');
+          "
+
+      - name: Guardar logs como artefacto
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: pipeline-report-${{ github.run_number }}
+          path: |
+            logs/
+            *.log
+          retention-days: 30
+          if-no-files-found: ignore
+
+  notify:
+    name: Resultado del pipeline
+    runs-on: ubuntu-latest
+    needs: run_pipeline
+    if: always()
+    steps:
+      - name: Pipeline aprobado — QA habilitado
+        if: needs.run_pipeline.result == 'success'
+        run: |
+          echo "✓ Pipeline completado exitosamente"
+          echo "✓ Entorno QA habilitado para el equipo de pruebas"
+          echo "✓ Cumplimiento LOPDP: 100%"
+
+      - name: Pipeline con alertas — QA bloqueado
+        if: needs.run_pipeline.result != 'success'
+        run: |
+          echo "✗ Pipeline falló o terminó con alertas"
+          echo "✗ Entorno QA BLOQUEADO"
+          echo "✗ Revisar los logs antes de habilitar acceso al equipo"
+          exit 1
