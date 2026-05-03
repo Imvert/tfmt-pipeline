@@ -113,7 +113,7 @@ jobs:
           FPE_TWEAK: ${{ secrets.FPE_TWEAK }}
         run: python -m pipeline.orchestrator
 
-       - name: Verificar transformación en BD QA
+      - name: Verificar transformación en BD QA
         env:
           PGPASSWORD: ${{ secrets.QA_DB_PASSWORD }}
         run: |
