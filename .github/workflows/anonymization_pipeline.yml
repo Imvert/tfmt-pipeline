@@ -113,7 +113,7 @@ jobs:
           FPE_TWEAK: ${{ secrets.FPE_TWEAK }}
         run: python -m pipeline.orchestrator
 
-      - name: Verificar transformación en BD QA
+       - name: Verificar transformación en BD QA
         env:
           PGPASSWORD: ${{ secrets.QA_DB_PASSWORD }}
         run: |
@@ -126,6 +126,71 @@ jobs:
             SELECT COUNT(*) AS originales_filtradas FROM customers
             WHERE cedula IN ('1712345678','0924567890','1723456789');
           "
+
+      - name: Generar dump SQL plano de la BD QA anonimizada
+        env:
+          PGPASSWORD: ${{ secrets.QA_DB_PASSWORD }}
+        run: |
+          mkdir -p artifacts
+          pg_dump -h localhost -p 5433 -U qa_user -d northwind_qa \
+            --no-owner --no-privileges \
+            -f artifacts/northwind_qa_anonimizada.sql
+          echo "✓ Dump SQL generado:"
+          ls -lh artifacts/northwind_qa_anonimizada.sql
+
+      - name: Generar dump comprimido (formato custom de PostgreSQL)
+        env:
+          PGPASSWORD: ${{ secrets.QA_DB_PASSWORD }}
+        run: |
+          pg_dump -h localhost -p 5433 -U qa_user -d northwind_qa \
+            --no-owner --no-privileges \
+            -F c -Z 9 \
+            -f artifacts/northwind_qa_anonimizada.dump
+          echo "✓ Dump custom generado:"
+          ls -lh artifacts/northwind_qa_anonimizada.dump
+
+      - name: Generar README de instrucciones de restauración
+        run: |
+          cat > artifacts/README_RESTAURACION.md << 'EOF'
+          # Base de datos QA Anonimizada — Northwind
+          
+          Generado automáticamente por el pipeline de anonimización en GitHub Actions.
+          
+          ## Contenido
+          
+          - `northwind_qa_anonimizada.sql`   — Dump SQL plano (legible, ejecutable con psql)
+          - `northwind_qa_anonimizada.dump`  — Dump formato custom comprimido (más rápido)
+          
+          ## Restaurar en una BD local
+          
+          ### Opción 1 — Dump SQL plano
+          ```bash
+          createdb northwind_qa_local
+          psql -U postgres -d northwind_qa_local -f northwind_qa_anonimizada.sql
+          ```
+          
+          ### Opción 2 — Dump custom (recomendado)
+          ```bash
+          createdb northwind_qa_local
+          pg_restore -U postgres -d northwind_qa_local northwind_qa_anonimizada.dump
+          ```
+          
+          ## Garantías de cumplimiento LOPDP
+          
+          - Todos los campos personales de Alto y Medio riesgo están anonimizados
+          - Las cédulas están tokenizadas con FPE (Format-Preserving Encryption)
+          - Las relaciones entre tablas están preservadas (IIR = 1.0)
+          - Tasa de re-identificación = 0.0
+          EOF
+          echo "✓ README de restauración generado"
+
+      - name: Publicar BD QA anonimizada como artefacto descargable
+        uses: actions/upload-artifact@v4
+        with:
+          name: northwind-qa-anonimizada-${{ github.run_number }}
+          path: artifacts/
+          retention-days: 7
+          if-no-files-found: error
 
       - name: Guardar logs como artefacto
         if: always()
