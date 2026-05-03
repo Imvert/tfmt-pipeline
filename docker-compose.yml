@@ -14,7 +14,7 @@ services:
     environment:
       POSTGRES_DB:       northwind_prod
       POSTGRES_USER:     prod_user
-      POSTGRES_PASSWORD: prod_secret_2024
+      POSTGRES_PASSWORD: ${PROD_DB_PASSWORD}
     ports:
       - "5432:5432"
     volumes:
@@ -37,7 +37,7 @@ services:
     environment:
       POSTGRES_DB:       northwind_qa
       POSTGRES_USER:     qa_user
-      POSTGRES_PASSWORD: qa_secret_2024
+      POSTGRES_PASSWORD: ${QA_DB_PASSWORD}
     ports:
       - "5433:5432"
     volumes:
@@ -57,7 +57,7 @@ services:
     restart: unless-stopped
     environment:
       PGADMIN_DEFAULT_EMAIL:    admin@tfmt.com
-      PGADMIN_DEFAULT_PASSWORD: admin123
+      PGADMIN_DEFAULT_PASSWORD: ${PGADMIN_PASSWORD}
     ports:
       - "5050:80"
     volumes:
@@ -82,14 +82,14 @@ services:
       SOURCE_PORT:     5432
       SOURCE_DB:       northwind_prod
       SOURCE_USER:     prod_user
-      SOURCE_PASSWORD: prod_secret_2024
+      SOURCE_PASSWORD: ${PROD_DB_PASSWORD}
       TARGET_HOST:     db_qa
       TARGET_PORT:     5432
       TARGET_DB:       northwind_qa
       TARGET_USER:     qa_user
-      TARGET_PASSWORD: qa_secret_2024
-      FPE_KEY:         "6f8b3d2a1e9c4f7b0d5a2e8c3f6b9d1a"
-      FPE_TWEAK:       "tfmt2024"
+      TARGET_PASSWORD: ${QA_DB_PASSWORD}
+      FPE_KEY:         ${FPE_KEY}
+      FPE_TWEAK:       ${FPE_TWEAK}
     volumes:
       - ./pipeline:/app/pipeline
       - ./config:/app/config
