@@ -1,0 +1,189 @@
+# ============================================================
+#  POLÍTICA DE ANONIMIZACIÓN - Pipeline TFMT
+#  Formato: Policy-as-Code (YAML)
+#  Descripción: Define qué columnas proteger y qué técnica
+#               aplicar. Modificar aquí SIN tocar el código.
+# ============================================================
+
+pipeline:
+  name: "Northwind QA Anonymization Pipeline"
+  version: "1.0.0"
+  author: "Pilatuña López Luis Alexander"
+  description: >
+    Pipeline de anonimización y tokenización para la base de datos
+    Northwind adaptada
+
+# ── Conexiones (se sobreescriben con variables de entorno) ──
+connections:
+  source:
+    host:     "${SOURCE_HOST}"
+    port:     5432
+    database: "${SOURCE_DB}"
+    user:     "${SOURCE_USER}"
+    password: "${SOURCE_PASSWORD}"
+  target:
+    host:     "${TARGET_HOST}"
+    port:     5432
+    database: "${TARGET_DB}"
+    user:     "${TARGET_USER}"
+    password: "${TARGET_PASSWORD}"
+
+# ── Configuración FPE (Format-Preserving Encryption) ───────
+fpe:
+  key:   "${FPE_KEY}"
+  tweak: "${FPE_TWEAK}"
+  # Alfabeto para cédulas ecuatorianas (solo dígitos)
+  alphabet_numeric: "0123456789"
+  # Alfabeto para emails y textos alfanuméricos
+  alphabet_alpha:   "abcdefghijklmnopqrstuvwxyz0123456789"
+
+# ── Reglas de transformación por tabla ─────────────────────
+#
+#  Técnicas disponibles:
+#    shuffle      → Barajado (Data Shuffling): reasigna valores
+#                   de la misma columna entre filas. Irreversible.
+#    fake         → Sustitución sintética: reemplaza con dato
+#                   generado. Irreversible.
+#    fpe_numeric  → Format-Preserving Encryption para dígitos.
+#                   Preserva longitud. Determinístico.
+#    partial_mask → Enmascara caracteres centrales con '*'.
+#    noise        → Agrega ruido estadístico a valores numéricos.
+#    suppress     → Elimina el valor (NULL).
+#    generalize   → Reduce granularidad (ej: fecha → solo año).
+#
+#  nivel_riesgo: ALTO | MEDIO | BAJO  (según LOPDP)
+# ───────────────────────────────────────────────────────────
+
+tables:
+
+  customers:
+    description: "Datos personales de clientes"
+    columns:
+      contact_name:
+        technique:     shuffle
+        nivel_riesgo:  MEDIO
+        description:   "Nombre del contacto — barajado entre filas"
+
+      phone:
+        technique:     fake
+        fake_type:     phone_ec
+        nivel_riesgo:  MEDIO
+        description:   "Teléfono — sustituido por número ficticio"
+
+      email:
+        technique:     fake
+        fake_type:     email
+        nivel_riesgo:  MEDIO
+        description:   "Correo electrónico — sustituido por correo ficticio"
+
+      address:
+        technique:     fake
+        fake_type:     address_ec
+        nivel_riesgo:  MEDIO
+        description:   "Dirección — sustituida por dirección ficticia"
+
+      cedula:
+        technique:     fpe_numeric
+        length:        10
+        nivel_riesgo:  ALTO
+        description:   >
+          Cédula ecuatoriana — tokenizada con FPE. Preserva 10 dígitos.
+          Determinística: misma cédula → mismo token en todas las tablas.
+
+      fecha_nacimiento:
+        technique:     generalize
+        granularity:   year   # Solo se conserva el año
+        nivel_riesgo:  ALTO
+        description:   "Fecha nacimiento → generalizada a solo año"
+
+      credit_limit:
+        technique:     noise
+        noise_pct:     15     # ±15% de variación aleatoria
+        nivel_riesgo:  ALTO
+        description:   "Límite crédito — ruido estadístico ±15%"
+
+  employees:
+    description: "Datos personales de empleados (RRHH)"
+    columns:
+      first_name:
+        technique:     fake
+        fake_type:     first_name
+        nivel_riesgo:  MEDIO
+        description:   "Nombre — sustituido por nombre ficticio"
+
+      last_name:
+        technique:     fake
+        fake_type:     last_name
+        nivel_riesgo:  MEDIO
+        description:   "Apellido — sustituido por apellido ficticio"
+
+      home_phone:
+        technique:     fake
+        fake_type:     phone_ec
+        nivel_riesgo:  MEDIO
+        description:   "Teléfono domiciliario — sustituido"
+
+      email:
+        technique:     fake
+        fake_type:     email
+        nivel_riesgo:  MEDIO
+        description:   "Correo electrónico — sustituido"
+
+      address:
+        technique:     fake
+        fake_type:     address_ec
+        nivel_riesgo:  MEDIO
+        description:   "Dirección domiciliaria — sustituida"
+
+      cedula:
+        technique:     fpe_numeric
+        length:        10
+        nivel_riesgo:  ALTO
+        description:   "Cédula ecuatoriana — tokenizada con FPE"
+
+      birth_date:
+        technique:     generalize
+        granularity:   year
+        nivel_riesgo:  ALTO
+        description:   "Fecha de nacimiento → generalizada a año"
+
+      salary:
+        technique:     noise
+        noise_pct:     20
+        nivel_riesgo:  ALTO
+        description:   "Salario — ruido estadístico ±20%"
+
+  suppliers:
+    description: "Datos de proveedores"
+    columns:
+      contact_name:
+        technique:     shuffle
+        nivel_riesgo:  BAJO
+        description:   "Nombre de contacto — barajado"
+      email:
+        technique:     fake
+        fake_type:     email
+        nivel_riesgo:  MEDIO
+        description:   "Email de proveedor — sustituido"
+      phone:
+        technique:     partial_mask
+        mask_char:     "*"
+        keep_start:    3
+        keep_end:      2
+        nivel_riesgo:  BAJO
+        description:   "Teléfono — enmascaramiento parcial (ej: 022-***-**89)"
+
+# ── Configuración de validación post-transformación ────────
+validation:
+  check_referential_integrity: true
+  check_no_originals_remain:   true
+  sample_size_pct:             10   # Verificar 10% de filas al azar
+  k_anonymity_target:          5    # k >= 5 para datos de riesgo medio
+  k_anonymity_sensitive:       10   # k >= 10 para datos ALTO riesgo
+
+# ── Configuración de logging ────────────────────────────────
+logging:
+  level:       INFO
+  output_dir:  /app/logs
+  format:      "%(asctime)s [%(levelname)s] %(name)s: %(message)s"
+  keep_days:   30

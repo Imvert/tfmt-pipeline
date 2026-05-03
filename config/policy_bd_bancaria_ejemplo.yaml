@@ -1,0 +1,178 @@
+# ============================================================
+#  EJEMPLO: Política para una BD Bancaria
+#  Demuestra que el pipeline funciona con CUALQUIER esquema
+#  Solo hay que cambiar este archivo YAML — el código no cambia
+# ============================================================
+
+pipeline:
+  name: "Pipeline BD Bancaria - Ejemplo de portabilidad"
+  version: "1.0.0"
+  author: "Pilatuña López Luis Alexander"
+  description: >
+    Ejemplo de política para una base de datos bancaria.
+    Demuestra que el pipeline es independiente del esquema —
+    solo se cambia este YAML, el código Python no se modifica.
+
+connections:
+  source:
+    host:     "${SOURCE_HOST}"
+    port:     5432
+    database: "${SOURCE_DB}"
+    user:     "${SOURCE_USER}"
+    password: "${SOURCE_PASSWORD}"
+  target:
+    host:     "${TARGET_HOST}"
+    port:     5432
+    database: "${TARGET_DB}"
+    user:     "${TARGET_USER}"
+    password: "${TARGET_PASSWORD}"
+
+fpe:
+  key:              "${FPE_KEY}"
+  tweak:            "${FPE_TWEAK}"
+  alphabet_numeric: "0123456789"
+  alphabet_alpha:   "abcdefghijklmnopqrstuvwxyz0123456789"
+
+# ── Tablas de una BD bancaria hipotética ──────────────────
+# El pipeline descubrirá las PKs automáticamente desde
+# information_schema
+
+tables:
+
+  # Tabla: cuenta_cliente
+  cuenta_cliente:
+    description: "Clientes del banco con datos personales sensibles"
+    columns:
+      nombre_titular:
+        technique:    fake
+        fake_type:    full_name
+        nivel_riesgo: MEDIO
+        description:  "Nombre completo del titular"
+
+      cedula_ruc:
+        technique:    fpe_numeric
+        length:       10
+        nivel_riesgo: ALTO
+        description:  "Cédula o RUC — tokenización FPE"
+
+      correo_electronico:
+        technique:    fake
+        fake_type:    email
+        nivel_riesgo: MEDIO
+        description:  "Correo — sustituido por valor sintético"
+
+      telefono_celular:
+        technique:    fake
+        fake_type:    phone_ec
+        nivel_riesgo: MEDIO
+        description:  "Teléfono celular — sustituido"
+
+      direccion_domicilio:
+        technique:    fake
+        fake_type:    address_ec
+        nivel_riesgo: MEDIO
+        description:  "Dirección domiciliaria — sustituida"
+
+      fecha_nacimiento:
+        technique:    generalize
+        granularity:  year
+        nivel_riesgo: ALTO
+        description:  "Fecha de nacimiento → solo año"
+
+      score_crediticio:
+        technique:    noise
+        noise_pct:    10
+        nivel_riesgo: ALTO
+        description:  "Score crediticio — ruido ±10%"
+
+  # Tabla: transaccion
+  transaccion:
+    description: "Movimientos financieros de las cuentas"
+    columns:
+      numero_cuenta_origen:
+        technique:    fpe_numeric
+        length:       10
+        nivel_riesgo: ALTO
+        description:  "Número de cuenta — tokenizado FPE"
+
+      numero_cuenta_destino:
+        technique:    fpe_numeric
+        length:       10
+        nivel_riesgo: ALTO
+        description:  "Número de cuenta destino — tokenizado FPE"
+
+      monto:
+        technique:    noise
+        noise_pct:    5
+        nivel_riesgo: ALTO
+        description:  "Monto de la transacción — ruido ±5%"
+
+      descripcion:
+        technique:    suppress
+        nivel_riesgo: BAJO
+        description:  "Descripción libre — suprimida (NULL)"
+
+  # Tabla: empleado_banco
+  empleado_banco:
+    description: "Datos del personal interno del banco"
+    columns:
+      primer_nombre:
+        technique:    fake
+        fake_type:    first_name
+        nivel_riesgo: MEDIO
+        description:  "Nombre — sustituido"
+
+      apellido:
+        technique:    fake
+        fake_type:    last_name
+        nivel_riesgo: MEDIO
+        description:  "Apellido — sustituido"
+
+      cedula:
+        technique:    fpe_numeric
+        length:       10
+        nivel_riesgo: ALTO
+        description:  "Cédula del empleado — tokenizada FPE"
+
+      salario_base:
+        technique:    noise
+        noise_pct:    20
+        nivel_riesgo: ALTO
+        description:  "Salario — ruido ±20%"
+
+      correo_corporativo:
+        technique:    fake
+        fake_type:    email
+        nivel_riesgo: MEDIO
+        description:  "Correo corporativo — sustituido"
+
+  # Tabla: producto_financiero
+  producto_financiero:
+    description: "Productos contratados por clientes"
+    columns:
+      numero_contrato:
+        technique:    partial_mask
+        mask_char:    "*"
+        keep_start:   3
+        keep_end:     2
+        nivel_riesgo: BAJO
+        description:  "Número de contrato — enmascaramiento parcial"
+
+      tasa_interes:
+        technique:    noise
+        noise_pct:    2
+        nivel_riesgo: MEDIO
+        description:  "Tasa de interés — ruido ±2% (preserva distribución)"
+
+validation:
+  check_referential_integrity: true
+  check_no_originals_remain:   true
+  sample_size_pct:             10
+  k_anonymity_target:          5
+  k_anonymity_sensitive:       10
+
+logging:
+  level:      INFO
+  output_dir: /app/logs
+  format:     "%(asctime)s [%(levelname)s] %(name)s: %(message)s"
+  keep_days:  30

@@ -1,0 +1,15 @@
+# ── Conexión a PostgreSQL ──────────────────────────────────
+psycopg2-binary==2.9.9
+SQLAlchemy==2.0.30
+
+# ── Configuración YAML ────────────────────────────────────
+PyYAML==6.0.1
+
+# ── Format-Preserving Encryption (FPE / FF3-1) ───────────
+ff3==1.0.3
+
+# ── Generación de datos sintéticos ───────────────────────
+Faker==24.9.0
+
+# ── Logging estructurado ─────────────────────────────────
+colorlog==6.8.2

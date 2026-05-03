@@ -1,0 +1,24 @@
+{
+  "Servers": {
+    "1": {
+      "Name": "PRODUCCION (northwind_prod)",
+      "Group": "TFMT",
+      "Host": "db_produccion",
+      "Port": 5432,
+      "MaintenanceDB": "northwind_prod",
+      "Username": "prod_user",
+      "SSLMode": "prefer",
+      "PassFile": "/pgpass"
+    },
+    "2": {
+      "Name": "QA (northwind_qa)",
+      "Group": "TFMT",
+      "Host": "db_qa",
+      "Port": 5432,
+      "MaintenanceDB": "northwind_qa",
+      "Username": "qa_user",
+      "SSLMode": "prefer",
+      "PassFile": "/pgpass"
+    }
+  }
+}

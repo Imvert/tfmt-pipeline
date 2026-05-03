@@ -1,0 +1,114 @@
+version: "3.9"
+
+# ============================================================
+#  Pipeline Anonimización/Tokenización - TFMT
+# ============================================================
+
+services:
+
+  # ── Base de datos PostgreSQL (fuente: simula PRODUCCIÓN) ──
+  db_produccion:
+    image: postgres:15-alpine
+    container_name: tfmt_db_produccion
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB:       northwind_prod
+      POSTGRES_USER:     prod_user
+      POSTGRES_PASSWORD: prod_secret_2024
+    ports:
+      - "5432:5432"
+    volumes:
+      - pg_prod_data:/var/lib/postgresql/data
+      - ./sql/01_northwind_schema.sql:/docker-entrypoint-initdb.d/01_schema.sql
+      - ./sql/02_northwind_data.sql:/docker-entrypoint-initdb.d/02_data.sql
+    networks:
+      - tfmt_net
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U prod_user -d northwind_prod"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # ── Base de datos PostgreSQL (destino: simula QA) ──
+  db_qa:
+    image: postgres:15-alpine
+    container_name: tfmt_db_qa
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB:       northwind_qa
+      POSTGRES_USER:     qa_user
+      POSTGRES_PASSWORD: qa_secret_2024
+    ports:
+      - "5433:5432"
+    volumes:
+      - pg_qa_data:/var/lib/postgresql/data
+    networks:
+      - tfmt_net
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U qa_user -d northwind_qa"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # ── pgAdmin (interfaz web para explorar ambas BDs) ──
+  pgadmin:
+    image: dpage/pgadmin4:latest
+    container_name: tfmt_pgadmin
+    restart: unless-stopped
+    environment:
+      PGADMIN_DEFAULT_EMAIL:    admin@tfmt.com
+      PGADMIN_DEFAULT_PASSWORD: admin123
+    ports:
+      - "5050:80"
+    volumes:
+      - pgadmin_data:/var/lib/pgadmin
+      - ./docker/pgadmin_servers.json:/pgadmin4/servers.json
+    networks:
+      - tfmt_net
+    depends_on:
+      db_produccion:
+        condition: service_healthy
+      db_qa:
+        condition: service_healthy
+
+  # ── Pipeline de anonimización (se ejecuta manualmente) ──
+  pipeline:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.pipeline
+    container_name: tfmt_pipeline
+    environment:
+      SOURCE_HOST:     db_produccion
+      SOURCE_PORT:     5432
+      SOURCE_DB:       northwind_prod
+      SOURCE_USER:     prod_user
+      SOURCE_PASSWORD: prod_secret_2024
+      TARGET_HOST:     db_qa
+      TARGET_PORT:     5432
+      TARGET_DB:       northwind_qa
+      TARGET_USER:     qa_user
+      TARGET_PASSWORD: qa_secret_2024
+      FPE_KEY:         "6f8b3d2a1e9c4f7b0d5a2e8c3f6b9d1a"
+      FPE_TWEAK:       "tfmt2024"
+    volumes:
+      - ./pipeline:/app/pipeline
+      - ./config:/app/config
+      - ./logs:/app/logs
+    networks:
+      - tfmt_net
+    depends_on:
+      db_produccion:
+        condition: service_healthy
+      db_qa:
+        condition: service_healthy
+    profiles:
+      - run   # Solo se ejecuta con: docker-compose --profile run up pipeline
+
+volumes:
+  pg_prod_data:
+  pg_qa_data:
+  pgadmin_data:
+
+networks:
+  tfmt_net:
+    driver: bridge

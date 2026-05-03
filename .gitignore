@@ -1,0 +1,36 @@
+# Entornos virtuales Python
+venv/
+venv312/
+env/
+.venv/
+
+# Caché de Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+*.egg-info/
+
+# Logs generados por el pipeline
+logs/
+*.log
+
+# Archivos de configuración local
+.env
+.env.local
+
+# IDEs
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Sistemas operativos
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Volúmenes Docker
+pg_prod_data/
+pg_qa_data/
+pgadmin_data/
